@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     app_state::{AppError, ProxyTerminalState},
-    models::{ApprovalMode, DashboardState, SessionPolicy, WorkerStatus},
+    models::{AgentMemoryMode, ApprovalMode, DashboardState, DelegationMode, SessionPolicy, TaskGuardrails, WorkerStatus},
 };
 
 type ManagedState<'a> = State<'a, Mutex<ProxyTerminalState>>;
@@ -79,6 +79,15 @@ pub fn deny_request(
 }
 
 #[tauri::command]
+pub fn deny_request_and_stop(
+    app: AppHandle,
+    state: ManagedState<'_>,
+    request_id: String,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| state.deny_request_and_stop(&app, &request_id))
+}
+
+#[tauri::command]
 pub fn export_audit_log(state: ManagedState<'_>) -> Result<String, String> {
     with_state(state, |state| state.export_audit_log())
 }
@@ -98,10 +107,52 @@ pub fn create_worker(
     name: String,
     executable_path: Option<String>,
     args: Option<Vec<String>>,
+    memory_mode: Option<AgentMemoryMode>,
+    profile_id: Option<String>,
 ) -> Result<DashboardState, String> {
     with_state(state, |state| {
-        Ok(state.create_worker(adapter, name, executable_path, args.unwrap_or_default()))
+        Ok(state.create_worker(
+            adapter,
+            name,
+            executable_path,
+            args.unwrap_or_default(),
+            memory_mode.unwrap_or_else(|| state.policy.default_memory_mode.clone()),
+            profile_id,
+        ))
     })
+}
+
+#[tauri::command]
+pub fn save_agent_profile(
+    state: ManagedState<'_>,
+    name: String,
+    allow_commands: Vec<String>,
+    allow_domains: Vec<String>,
+    memory_mode: AgentMemoryMode,
+    delegation_mode: DelegationMode,
+    delegation_max_depth: u8,
+    default_guardrails: TaskGuardrails,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| {
+        Ok(state.save_agent_profile(
+            name,
+            allow_commands,
+            allow_domains,
+            memory_mode,
+            delegation_mode,
+            delegation_max_depth,
+            default_guardrails,
+        ))
+    })
+}
+
+#[tauri::command]
+pub fn apply_agent_profile(
+    state: ManagedState<'_>,
+    worker_id: String,
+    profile_id: String,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| state.apply_agent_profile(&worker_id, &profile_id))
 }
 
 #[tauri::command]
@@ -111,9 +162,10 @@ pub fn assign_task(
     worker_id: String,
     title: String,
     summary: String,
+    guardrails: TaskGuardrails,
 ) -> Result<DashboardState, String> {
     with_state(state, |state| {
-        state.assign_task(&app, &worker_id, title, summary)
+        state.assign_task(&app, &worker_id, title, summary, guardrails)
     })
 }
 

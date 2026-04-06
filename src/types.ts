@@ -3,6 +3,19 @@ export type ActionKind = "command" | "file" | "network" | "app" | "mcp";
 export type ApprovalMode = "one_time" | "session" | "persistent";
 export type PolicyVerdict = "allow" | "deny" | "prompt";
 export type WorkerStatus = "idle" | "running" | "paused" | "completed" | "failed";
+export type ProtectionState = "active" | "available" | "optional" | "unsupported" | "degraded";
+export type AgentTrustLevel = "untrusted";
+export type AgentRuntimeMode = "broker_only";
+export type AgentCompatibility = "unknown" | "broker_compatible";
+export type AgentCapabilitySetting =
+  | "brokered"
+  | "scoped"
+  | "prompted"
+  | "human_only"
+  | "denied"
+  | "isolated";
+export type AgentMemoryMode = "ephemeral" | "task_scoped" | "agent_scoped" | "persistent";
+export type DelegationMode = "deny" | "prompt" | "allow";
 
 export interface FileRule {
   root: string;
@@ -24,6 +37,9 @@ export interface SessionPolicy {
   mcp: MpcToolRule[];
   elevatedCommands: string[];
   auditRedactions: string[];
+  defaultMemoryMode: AgentMemoryMode;
+  delegationMode: DelegationMode;
+  delegationMaxDepth: number;
 }
 
 export interface ScopeDelta {
@@ -61,6 +77,8 @@ export interface AuditEvent {
   id: string;
   timestamp: string;
   category: string;
+  source: string;
+  outcome?: string;
   message: string;
   requestId?: string;
   workerId?: string;
@@ -69,6 +87,18 @@ export interface AuditEvent {
 export interface PendingApproval {
   request: ActionRequest;
   decision: PolicyDecision;
+}
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  builtIn: boolean;
+  allowCommands: string[];
+  allowDomains: string[];
+  memoryMode: AgentMemoryMode;
+  delegationMode: DelegationMode;
+  delegationMaxDepth: number;
+  defaultGuardrails: TaskGuardrails;
 }
 
 export interface CommandSession {
@@ -86,6 +116,12 @@ export interface Worker {
   id: string;
   name: string;
   adapter: "openclaw" | "nemoclaw";
+  trustLevel: AgentTrustLevel;
+  runtimeMode: AgentRuntimeMode;
+  compatibility: AgentCompatibility;
+  capabilityProfile: AgentCapabilityProfile;
+  memoryMode: AgentMemoryMode;
+  profileId?: string | null;
   status: WorkerStatus;
   scopeRoots: string[];
   currentTask?: string;
@@ -94,16 +130,41 @@ export interface Worker {
   outputLines: string[];
 }
 
+export interface AgentCapabilityProfile {
+  execution: AgentCapabilitySetting;
+  filesystem: AgentCapabilitySetting;
+  network: AgentCapabilitySetting;
+  memory: AgentCapabilitySetting;
+  delegation: AgentCapabilitySetting;
+  controlPlane: AgentCapabilitySetting;
+}
+
+export interface ProtectionStatus {
+  id: string;
+  label: string;
+  state: ProtectionState;
+  detail: string;
+}
+
 export interface SupervisorTask {
   id: string;
   title: string;
   assignedWorkerId?: string;
   status: WorkerStatus;
   summary: string;
+  guardrails: TaskGuardrails;
+}
+
+export interface TaskGuardrails {
+  allowShell: boolean;
+  allowNetwork: boolean;
+  allowWrites: boolean;
 }
 
 export interface DashboardState {
   policy: SessionPolicy;
+  profiles: AgentProfile[];
+  protections: ProtectionStatus[];
   audit: AuditEvent[];
   pendingApprovals: PendingApproval[];
   sessions: CommandSession[];

@@ -68,15 +68,117 @@ button:hover {
   min-height: 100vh;
 }
 
+.app-shell-nav {
+  align-items: start;
+}
+
 .sidebar,
 .main-pane,
 .grid {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.single-focus-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sidebar-nav {
+  align-content: start;
+  position: sticky;
+  top: 1rem;
+}
+
+.nav-main,
+.view-stack,
+.view-with-drawer,
+.detail-stack,
+.summary-grid,
+.summary-list,
+.dual-pane-grid,
+.form-grid,
+.entity-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.overview-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dual-pane-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.view-with-drawer {
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  align-items: start;
+}
+
+.detail-drawer {
+  position: sticky;
+  top: 1rem;
+}
+
+.nav-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.nav-link,
+.entity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  width: 100%;
+}
+
+.nav-link.active,
+.entity-row.active,
+.interactive-card.active {
+  border-color: var(--accent);
+  background: rgba(102, 217, 193, 0.08);
+}
+
+.summary-card,
+.entity-row {
+  padding: 0.85rem;
+  border-radius: 16px;
+  background: var(--panel-strong);
+  border: 1px solid var(--panel-border);
+}
+
+.summary-card strong {
+  font-size: 1.8rem;
+}
+
+.summary-list.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.overview-focus-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.compact-card strong {
+  font-size: 1.35rem;
+}
+
+.form-grid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .panel {
@@ -85,6 +187,8 @@ button:hover {
   border-radius: 20px;
   padding: 1rem;
   box-shadow: var(--shadow);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .panel-header {
@@ -135,6 +239,23 @@ button:hover {
   border-color: rgba(127, 227, 149, 0.45);
 }
 
+.badge.active {
+  background: rgba(102, 217, 193, 0.12);
+  border-color: rgba(102, 217, 193, 0.45);
+}
+
+.badge.available,
+.badge.optional {
+  background: rgba(140, 200, 255, 0.12);
+  border-color: rgba(140, 200, 255, 0.45);
+}
+
+.badge.unsupported,
+.badge.degraded {
+  background: rgba(255, 204, 102, 0.12);
+  border-color: rgba(255, 204, 102, 0.45);
+}
+
 .chips,
 .inline-actions,
 .panel-actions,
@@ -149,6 +270,9 @@ button:hover {
 .line {
   display: block;
   font-family: "IBM Plex Mono", Consolas, monospace;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chip {
@@ -164,7 +288,44 @@ button:hover {
   margin-top: 0.85rem;
 }
 
+.policy-item,
+.policy-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.section-toggle:hover {
+  transform: none;
+  border-color: transparent;
+}
+
+.policy-editor.single-field {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.policy-item {
+  padding: 0.3rem 0;
+}
+
+.ghost-button {
+  padding: 0.45rem 0.7rem;
+}
+
 .approval-card,
+.protection-card,
 .worker-card,
 .task-card,
 .audit-item {
@@ -174,6 +335,17 @@ button:hover {
   border-radius: 16px;
   background: var(--panel-strong);
   border: 1px solid var(--panel-border);
+  min-width: 0;
+}
+
+.interactive-card {
+  text-align: left;
+  width: 100%;
+}
+
+.approval-list {
+  display: grid;
+  gap: 0.85rem;
 }
 
 .danger {
@@ -232,6 +404,18 @@ button:hover {
   width: 100%;
 }
 
+.command-status {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.panel-status {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
 .tab {
   background: #111722;
 }
@@ -241,11 +425,68 @@ button:hover {
 }
 
 .worker-creation,
+.protection-list,
 .worker-list,
 .task-list,
 .audit-list {
   display: grid;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.guardrail-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.command-library,
+.command-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--muted);
+}
+
+.toggle-row input {
+  width: auto;
+  margin: 0;
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.toggle-chip input {
+  width: auto;
+  margin: 0;
+}
+
+.capability-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.panel p,
+.panel span,
+.panel strong,
+.panel textarea,
+.panel input,
+.panel select {
+  min-width: 0;
+}
+
+.muted {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .worker-output {
@@ -267,7 +508,29 @@ button:hover {
 
 @media (max-width: 1100px) {
   .app-shell,
-  .grid {
+  .grid,
+  .summary-grid,
+  .dual-pane-grid,
+  .view-with-drawer,
+  .summary-list.compact {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar-nav {
+    position: static;
+  }
+
+  .detail-drawer {
+    position: static;
+  }
+}
+
+@media (max-width: 1500px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

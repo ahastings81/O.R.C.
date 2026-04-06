@@ -1,7 +1,7 @@
 [package]
 name = "proxy-terminal"
 version = "0.1.0"
-description = "Proxy Terminal desktop shell"
+description = "O.R.C. Terminal desktop shell"
 authors = ["OpenAI Codex"]
 license = "MIT"
 edition = "2021"
@@ -11,6 +11,7 @@ rust-version = "1.77"
 tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
+base64 = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "1.6", features = ["dialog-all", "shell-open"] }
@@ -18,6 +19,12 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1.0"
 portable-pty = "0.8"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading"
+] }
 
 [features]
 default = ["custom-protocol"]

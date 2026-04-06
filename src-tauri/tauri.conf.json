@@ -6,7 +6,7 @@
     "distDir": "../dist"
   },
   "package": {
-    "productName": "Proxy Terminal",
+    "productName": "O.R.C. Terminal",
     "version": "0.1.0"
   },
   "tauri": {
@@ -21,7 +21,7 @@
     },
     "bundle": {
       "active": true,
-      "identifier": "com.proxyterminal.app",
+      "identifier": "com.orcterminal.app",
       "targets": "all",
       "windows": {
         "digestAlgorithm": "sha256",
@@ -33,7 +33,7 @@
     },
     "windows": [
       {
-        "title": "Proxy Terminal",
+        "title": "O.R.C. Terminal",
         "width": 1600,
         "height": 980,
         "resizable": true

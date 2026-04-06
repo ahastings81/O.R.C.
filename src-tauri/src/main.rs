@@ -6,6 +6,7 @@ mod audit;
 mod commands;
 mod models;
 mod policy;
+mod security;
 
 use std::sync::Mutex;
 
@@ -21,9 +22,12 @@ fn main() {
             commands::resize_terminal,
             commands::approve_request,
             commands::deny_request,
+            commands::deny_request_and_stop,
             commands::export_audit_log,
             commands::update_policy,
             commands::create_worker,
+            commands::save_agent_profile,
+            commands::apply_agent_profile,
             commands::assign_task,
             commands::set_worker_status
         ])

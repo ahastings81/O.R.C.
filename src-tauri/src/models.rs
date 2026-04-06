@@ -46,6 +46,63 @@ pub enum WorkerStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProtectionState {
+    Active,
+    Available,
+    Optional,
+    Unsupported,
+    Degraded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentTrustLevel {
+    Untrusted,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRuntimeMode {
+    BrokerOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentCompatibility {
+    Unknown,
+    BrokerCompatible,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentCapabilitySetting {
+    Brokered,
+    Scoped,
+    Prompted,
+    HumanOnly,
+    Denied,
+    Isolated,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentMemoryMode {
+    Ephemeral,
+    TaskScoped,
+    AgentScoped,
+    Persistent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DelegationMode {
+    Deny,
+    Prompt,
+    Allow,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileRule {
@@ -72,6 +129,9 @@ pub struct SessionPolicy {
     pub mcp: Vec<McpToolRule>,
     pub elevated_commands: Vec<String>,
     pub audit_redactions: Vec<String>,
+    pub default_memory_mode: AgentMemoryMode,
+    pub delegation_mode: DelegationMode,
+    pub delegation_max_depth: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -119,6 +179,9 @@ pub struct AuditEvent {
     pub id: String,
     pub timestamp: DateTime<Utc>,
     pub category: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
     pub message: String,
     pub request_id: Option<String>,
     pub worker_id: Option<String>,
@@ -129,6 +192,39 @@ pub struct AuditEvent {
 pub struct PendingApproval {
     pub request: ActionRequest,
     pub decision: PolicyDecision,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCapabilityProfile {
+    pub execution: AgentCapabilitySetting,
+    pub filesystem: AgentCapabilitySetting,
+    pub network: AgentCapabilitySetting,
+    pub memory: AgentCapabilitySetting,
+    pub delegation: AgentCapabilitySetting,
+    pub control_plane: AgentCapabilitySetting,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskGuardrails {
+    pub allow_shell: bool,
+    pub allow_network: bool,
+    pub allow_writes: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProfile {
+    pub id: String,
+    pub name: String,
+    pub built_in: bool,
+    pub allow_commands: Vec<String>,
+    pub allow_domains: Vec<String>,
+    pub memory_mode: AgentMemoryMode,
+    pub delegation_mode: DelegationMode,
+    pub delegation_max_depth: u8,
+    pub default_guardrails: TaskGuardrails,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +246,12 @@ pub struct Worker {
     pub id: String,
     pub name: String,
     pub adapter: String,
+    pub trust_level: AgentTrustLevel,
+    pub runtime_mode: AgentRuntimeMode,
+    pub compatibility: AgentCompatibility,
+    pub capability_profile: AgentCapabilityProfile,
+    pub memory_mode: AgentMemoryMode,
+    pub profile_id: Option<String>,
     pub status: WorkerStatus,
     pub scope_roots: Vec<String>,
     pub current_task: Option<String>,
@@ -160,18 +262,30 @@ pub struct Worker {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProtectionStatus {
+    pub id: String,
+    pub label: String,
+    pub state: ProtectionState,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SupervisorTask {
     pub id: String,
     pub title: String,
     pub assigned_worker_id: Option<String>,
     pub status: WorkerStatus,
     pub summary: String,
+    pub guardrails: TaskGuardrails,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardState {
     pub policy: SessionPolicy,
+    pub profiles: Vec<AgentProfile>,
+    pub protections: Vec<ProtectionStatus>,
     pub audit: Vec<AuditEvent>,
     pub pending_approvals: Vec<PendingApproval>,
     pub sessions: Vec<CommandSession>,
