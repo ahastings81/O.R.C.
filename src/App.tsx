@@ -10,7 +10,9 @@ import {
   denyRequest,
   denyRequestAndStop,
   exportAudit,
+  restartTerminalSession,
   saveAgentProfile,
+  sendTerminalControl,
   sendTerminalInput,
   setWorkerStatus,
   updatePolicy
@@ -27,6 +29,7 @@ import type {
   SessionPolicy,
   SupervisorTask,
   TaskGuardrails,
+  TerminalControl,
   TerminalExitEvent,
   TerminalOutputEvent,
   Worker,
@@ -57,6 +60,16 @@ const VIEW_LABELS: Record<ViewId, string> = {
   protections: "Protections"
 };
 
+type AgentDiagnosticSeverity = "info" | "warn" | "danger";
+
+interface AgentDiagnostic {
+  id: string;
+  severity: AgentDiagnosticSeverity;
+  title: string;
+  detail: string;
+  action: string;
+}
+
 export function App() {
   const [state, setState] = useState<DashboardState | null>(null);
   const [currentView, setCurrentView] = useState<ViewId>("overview");
@@ -71,6 +84,7 @@ export function App() {
   const [policyStatus, setPolicyStatus] = useState<string>("");
   const [workerStatusMessage, setWorkerStatusMessage] = useState<string>("");
   const [commandSearch, setCommandSearch] = useState("");
+  const [customLibraryValue, setCustomLibraryValue] = useState("");
   const [showCommandLibrary, setShowCommandLibrary] = useState(true);
   const [taskTitle, setTaskTitle] = useState("Inspect workspace");
   const [taskSummary, setTaskSummary] = useState("Review scoped files before touching any command.");
@@ -276,6 +290,28 @@ export function App() {
     );
   }, [commandSearch]);
 
+  const customEnabledItems = useMemo(() => {
+    if (!state) {
+      return [];
+    }
+
+    const knownCommands = new Set(
+      COMMAND_LIBRARY.flatMap((group) => group.items.filter((item) => item.kind === "command").map((item) => item.value))
+    );
+    const knownDomains = new Set(
+      COMMAND_LIBRARY.flatMap((group) => group.items.filter((item) => item.kind === "domain").map((item) => item.value))
+    );
+
+    return [
+      ...state.policy.allowCommands
+        .filter((value) => !knownCommands.has(value))
+        .map((value) => ({ kind: "command" as const, value })),
+      ...state.policy.allowDomains
+        .filter((value) => !knownDomains.has(value))
+        .map((value) => ({ kind: "domain" as const, value }))
+    ];
+  }, [state]);
+
   if (!state) {
     return <div className="loading">Booting O.R.C. Terminal...</div>;
   }
@@ -345,6 +381,38 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setCommandStatus(`Send failed: ${message}`);
+    }
+  }
+
+  async function handleTerminalControl(control: TerminalControl, label: string) {
+    if (!activeSessionId) {
+      setCommandStatus("No active terminal session.");
+      return;
+    }
+
+    setCommandStatus(`Sending ${label}...`);
+    try {
+      await refresh(sendTerminalControl(activeSessionId, control));
+      setCommandStatus(`Sent ${label}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCommandStatus(`${label} failed: ${message}`);
+    }
+  }
+
+  async function handleRestartSession() {
+    if (!activeSessionId) {
+      setCommandStatus("No active terminal session.");
+      return;
+    }
+
+    setCommandStatus("Restarting session...");
+    try {
+      await refresh(restartTerminalSession(activeSessionId));
+      setCommandStatus("Restarted session.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setCommandStatus(`Restart failed: ${message}`);
     }
   }
 
@@ -485,6 +553,16 @@ export function App() {
 
   async function toggleLibraryItem(item: LibraryItem, enabled: boolean) {
     await toggleLibraryGroup([item], enabled);
+  }
+
+  async function addCustomLibraryItem(kind: LibraryItem["kind"]) {
+    const value = customLibraryValue.trim().toLowerCase();
+    if (!value) {
+      return;
+    }
+
+    await toggleLibraryItem({ kind, value }, true);
+    setCustomLibraryValue("");
   }
 
   return (
@@ -747,6 +825,38 @@ export function App() {
                       );
                     })}
                   </div>
+                  <div className="custom-library-add">
+                    <input
+                      value={customLibraryValue}
+                      onChange={(event) => setCustomLibraryValue(event.target.value)}
+                      placeholder="Add custom command or domain"
+                    />
+                    <div className="inline-actions">
+                      <button type="button" onClick={() => void addCustomLibraryItem("command")}>
+                        Add command
+                      </button>
+                      <button type="button" onClick={() => void addCustomLibraryItem("domain")}>
+                        Add domain
+                      </button>
+                    </div>
+                  </div>
+                  {customEnabledItems.length > 0 ? (
+                    <div className="custom-enabled-list">
+                      <strong>Custom enabled items</strong>
+                      <div className="chips">
+                        {customEnabledItems.map((item) => (
+                          <label className="toggle-chip" key={`custom:${item.kind}:${item.value}`}>
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              onChange={(event) => void toggleLibraryItem(item, event.target.checked)}
+                            />
+                            <span className="chip">{item.kind === "domain" ? `${item.value} (domain)` : item.value}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -884,7 +994,7 @@ export function App() {
             </div>
           </div>
 
-          <TerminalView session={activeSession} onSubmitInput={submitTerminalInput} />
+          <TerminalView session={activeSession} />
 
           <form className="command-form" onSubmit={submitCommand}>
             <label htmlFor="command-input">$</label>
@@ -898,6 +1008,38 @@ export function App() {
               Send
             </button>
           </form>
+          <div className="terminal-controls">
+            <button type="button" onClick={() => void handleTerminalControl("ctrl_c", "Ctrl+C")}>
+              Send Ctrl+C
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("ctrl_d", "Ctrl+D")}>
+              Send Ctrl+D
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("clear_line", "clear line")}>
+              Clear line
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("space", "Space")}>
+              Space
+            </button>
+            <button type="button" onClick={() => void handleRestartSession()}>
+              Restart session
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("arrow_up", "Arrow Up")}>
+              Arrow Up
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("arrow_down", "Arrow Down")}>
+              Arrow Down
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("page_up", "Page Up")}>
+              Page Up
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("page_down", "Page Down")}>
+              Page Down
+            </button>
+            <button type="button" onClick={() => void handleTerminalControl("enter", "Enter")}>
+              Enter
+            </button>
+          </div>
           {commandStatus ? <p className="command-status">{commandStatus}</p> : null}
         </section> : null}
 
@@ -963,7 +1105,15 @@ export function App() {
             </section>
 
             <aside className="panel detail-drawer">
-              {selectedAgent ? renderAgentDrawer(selectedAgent, dashboard.profiles, updateWorkerState, applyProfileToWorker) : (
+              {selectedAgent ? renderAgentDrawer(
+                selectedAgent,
+                dashboard.profiles,
+                dashboard.pendingApprovals,
+                dashboard.audit,
+                dashboard.tasks,
+                updateWorkerState,
+                applyProfileToWorker
+              ) : (
                 <p className="muted">Select an agent to inspect its runtime, profile, and live output.</p>
               )}
             </aside>
@@ -1214,9 +1364,14 @@ function splitWorkerArgs(value: string): string[] {
 function renderAgentDrawer(
   worker: Worker,
   profiles: AgentProfile[],
+  pendingApprovals: PendingApproval[],
+  audit: AuditEvent[],
+  tasks: SupervisorTask[],
   updateWorkerState: (workerId: string, status: WorkerStatus) => Promise<void>,
   applyProfileToWorker: (workerId: string, profileId: string) => Promise<void>
 ) {
+  const diagnostics = diagnoseWorker(worker, pendingApprovals, audit, tasks);
+
   return (
     <div className="detail-stack">
       <div className="panel-header">
@@ -1261,6 +1416,24 @@ function renderAgentDrawer(
           </option>
         ))}
       </select>
+      <section className="diagnostics-list">
+        <div className="panel-header">
+          <strong>Diagnostics</strong>
+          <span className="badge neutral">{diagnostics.length}</span>
+        </div>
+        {diagnostics.map((diagnostic) => (
+          <div className={`diagnostic-card ${diagnostic.severity}`} key={diagnostic.id}>
+            <div className="panel-header">
+              <strong>{diagnostic.title}</strong>
+              <span className={`badge ${diagnostic.severity === "danger" ? "deny" : diagnostic.severity === "warn" ? "degraded" : "active"}`}>
+                {diagnostic.severity}
+              </span>
+            </div>
+            <span>{diagnostic.detail}</span>
+            <span className="muted">{diagnostic.action}</span>
+          </div>
+        ))}
+      </section>
       <div className="worker-output">
         {worker.outputLines.length === 0 ? (
           <span className="muted">No agent output yet.</span>
@@ -1414,6 +1587,140 @@ function renderProfileDrawer(profile: AgentProfile) {
       </div>
     </div>
   );
+}
+
+function diagnoseWorker(
+  worker: Worker,
+  pendingApprovals: PendingApproval[],
+  audit: AuditEvent[],
+  tasks: SupervisorTask[]
+): AgentDiagnostic[] {
+  const diagnostics: AgentDiagnostic[] = [];
+  const workerApprovals = pendingApprovals.filter((approval) => approval.request.workerId === worker.id);
+  const workerAudit = audit.filter((event) => event.workerId === worker.id);
+  const currentTask = tasks.find((task) => task.assignedWorkerId === worker.id && task.status !== "completed");
+  const outputText = worker.outputLines.join("\n").toLowerCase();
+
+  if (!worker.executablePath) {
+    diagnostics.push({
+      id: "missing-executable",
+      severity: "danger",
+      title: "Executable path is missing",
+      detail: "This agent has no executable configured, so it cannot launch successfully.",
+      action: "Set a valid executable path in Agents before starting the run."
+    });
+  }
+
+  if (worker.status === "failed") {
+    diagnostics.push({
+      id: "failed-status",
+      severity: "danger",
+      title: "Agent run failed",
+      detail: "The runtime marked this agent as failed, which usually means launch, protocol, or command-result handling broke.",
+      action: "Check the output below and the latest audit events for the first explicit failure message."
+    });
+  }
+
+  if (worker.compatibility === "unknown") {
+    diagnostics.push({
+      id: "compatibility-unknown",
+      severity: "warn",
+      title: "Compatibility is still unverified",
+      detail: "This executable has not yet proven that it can operate cleanly through the brokered envelope path.",
+      action: "Use a small read-only task first and confirm it emits PROXY_CMD or PROXY_JSON requests."
+    });
+  }
+
+  if (worker.status === "running" && worker.outputLines.length === 0) {
+    diagnostics.push({
+      id: "no-output-yet",
+      severity: "warn",
+      title: "Agent is running but silent",
+      detail: "A running agent with no output may still be starting, blocked on auth, or not speaking the expected adapter protocol.",
+      action: "Give it a moment, then check whether the Gateway/auth is configured and whether the adapter executable path and args are correct."
+    });
+  }
+
+  if (workerApprovals.length > 0) {
+    diagnostics.push({
+      id: "pending-approval",
+      severity: "warn",
+      title: "Agent is blocked on approval",
+      detail: `${workerApprovals.length} request(s) from this agent are waiting in Approvals, so the run may appear stalled even though it is behaving correctly.`,
+      action: "Open Approvals, inspect the request, and allow or deny it explicitly."
+    });
+  }
+
+  if (currentTask && !currentTask.guardrails.allowShell) {
+    diagnostics.push({
+      id: "task-shell-blocked",
+      severity: "warn",
+      title: "Task guardrails block shell execution",
+      detail: `The current task \`${currentTask.title}\` does not allow shell execution, so brokered commands will be denied before reaching the PTY.`,
+      action: "Only keep this off for reasoning-only tasks; otherwise update the task guardrails and reassign the task."
+    });
+  }
+
+  if (outputText.includes("rejected worker envelope") || outputText.includes("cannot approve")) {
+    diagnostics.push({
+      id: "protocol-violation",
+      severity: "danger",
+      title: "Agent attempted a forbidden broker action",
+      detail: "The agent tried to send an unsupported or approval-style envelope instead of a command request.",
+      action: "Inspect the adapter prompt or runtime behavior. Agents must only emit command envelopes and never approve their own requests."
+    });
+  }
+
+  if (
+    outputText.includes("timed out waiting for pty command result") ||
+    outputText.includes("failed to return command result")
+  ) {
+    diagnostics.push({
+      id: "command-loop-timeout",
+      severity: "danger",
+      title: "Brokered command loop timed out",
+      detail: "The app launched a brokered command, but the result was not returned to the agent loop in time.",
+      action: "Check the PTY output, terminal session health, and whether the command hung or waited for interactive input."
+    });
+  }
+
+  if (
+    outputText.includes("econnrefused") ||
+    outputText.includes("gateway") ||
+    outputText.includes("token") ||
+    outputText.includes("auth")
+  ) {
+    diagnostics.push({
+      id: "gateway-auth",
+      severity: "warn",
+      title: "Gateway or auth may be misconfigured",
+      detail: "The agent output suggests the OpenClaw Gateway URL, token, or auth context may not be valid.",
+      action: "Verify `openclaw gateway status`, the adapter args, and any gateway token or token-file path you passed into the agent."
+    });
+  }
+
+  const recentDeny = workerAudit.find((event) => event.outcome?.includes("denied"));
+  if (recentDeny) {
+    diagnostics.push({
+      id: "recent-denial",
+      severity: "info",
+      title: "Recent policy denial detected",
+      detail: recentDeny.message,
+      action: "Use the audit trail to decide whether to widen policy, approve once, or keep the denial in place."
+    });
+  }
+
+  if (diagnostics.length === 0) {
+    diagnostics.push({
+      id: "healthy-default",
+      severity: "info",
+      title: "No obvious fault detected",
+      detail: "The current state does not show a clear launch, protocol, approval, or task-guardrail problem.",
+      action: "If the agent is still not doing useful work, inspect its output and audit timeline for behavioral issues rather than platform failures."
+    });
+  }
+
+  return diagnostics;
 }
 
 function approvalCapabilityLabel(kind: string): string {

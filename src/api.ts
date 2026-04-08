@@ -5,6 +5,7 @@ import type {
   DashboardState,
   DelegationMode,
   SessionPolicy,
+  TerminalControl,
   TaskGuardrails
 } from "./types";
 
@@ -22,6 +23,17 @@ export async function sendTerminalInput(sessionId: string, input: string): Promi
 
 export async function resizeTerminal(sessionId: string, cols: number, rows: number): Promise<void> {
   return invoke("resize_terminal", { sessionId, cols, rows });
+}
+
+export async function sendTerminalControl(
+  sessionId: string,
+  control: TerminalControl
+): Promise<DashboardState> {
+  return invoke("send_terminal_control", { sessionId, control });
+}
+
+export async function restartTerminalSession(sessionId: string): Promise<DashboardState> {
+  return invoke("restart_terminal_session", { sessionId });
 }
 
 export async function approveRequest(requestId: string, mode: ApprovalMode): Promise<DashboardState> {

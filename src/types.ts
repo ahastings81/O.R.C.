@@ -1,6 +1,16 @@
 export type AccessLevel = "none" | "read" | "write" | "manage";
 export type ActionKind = "command" | "file" | "network" | "app" | "mcp";
 export type ApprovalMode = "one_time" | "session" | "persistent";
+export type TerminalControl =
+  | "ctrl_c"
+  | "ctrl_d"
+  | "clear_line"
+  | "space"
+  | "arrow_up"
+  | "arrow_down"
+  | "page_up"
+  | "page_down"
+  | "enter";
 export type PolicyVerdict = "allow" | "deny" | "prompt";
 export type WorkerStatus = "idle" | "running" | "paused" | "completed" | "failed";
 export type ProtectionState = "active" | "available" | "optional" | "unsupported" | "degraded";

@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     app_state::{AppError, ProxyTerminalState},
-    models::{AgentMemoryMode, ApprovalMode, DashboardState, DelegationMode, SessionPolicy, TaskGuardrails, WorkerStatus},
+    models::{AgentMemoryMode, ApprovalMode, DashboardState, DelegationMode, SessionPolicy, TaskGuardrails, TerminalControl, WorkerStatus},
 };
 
 type ManagedState<'a> = State<'a, Mutex<ProxyTerminalState>>;
@@ -54,6 +54,29 @@ pub fn resize_terminal(
 ) -> Result<(), String> {
     with_state(state, |state| {
         state.resize_terminal(&session_id, cols, rows)
+    })
+}
+
+#[tauri::command]
+pub fn send_terminal_control(
+    app: AppHandle,
+    state: ManagedState<'_>,
+    session_id: String,
+    control: TerminalControl,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| {
+        state.send_terminal_control(&app, &session_id, control)
+    })
+}
+
+#[tauri::command]
+pub fn restart_terminal_session(
+    app: AppHandle,
+    state: ManagedState<'_>,
+    session_id: String,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| {
+        state.restart_terminal_session(&app, &session_id)
     })
 }
 

@@ -20,6 +20,8 @@ fn main() {
             commands::create_command_session,
             commands::send_terminal_input,
             commands::resize_terminal,
+            commands::send_terminal_control,
+            commands::restart_terminal_session,
             commands::approve_request,
             commands::deny_request,
             commands::deny_request_and_stop,

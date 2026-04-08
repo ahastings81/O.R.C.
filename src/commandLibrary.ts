@@ -28,6 +28,12 @@ export const COMMAND_LIBRARY: CommandGroup[] = [
     items: [command("cd"), command("dir"), command("pwd"), command("get-childitem"), command("get-location"), command("type")]
   },
   {
+    id: "interactive-replies",
+    label: "Interactive Replies",
+    description: "Harmless confirmation-style replies commonly used by installers and setup wizards.",
+    items: [command("y"), command("n"), command("yes"), command("no")]
+  },
+  {
     id: "version-control",
     label: "Version Control",
     description: "Read and operate on git repositories.",

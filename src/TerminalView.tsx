@@ -7,7 +7,6 @@ import type { CommandSession, TerminalOutputEvent } from "./types";
 
 interface TerminalViewProps {
   session: CommandSession | null;
-  onSubmitInput: (sessionId: string, input: string) => Promise<void> | void;
 }
 
 export function TerminalView({ session }: TerminalViewProps) {
@@ -15,7 +14,6 @@ export function TerminalView({ session }: TerminalViewProps) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const lastSessionRef = useRef<string | null>(null);
-  const lastRenderedLineCountRef = useRef<number>(0);
   const sessionRef = useRef<CommandSession | null>(null);
 
   sessionRef.current = session;
@@ -78,13 +76,12 @@ export function TerminalView({ session }: TerminalViewProps) {
     }
 
     const sessionChanged = lastSessionRef.current !== session.id;
-    const lineCountChanged = lastRenderedLineCountRef.current !== session.lines.length;
+    const needsFullRehydrate = sessionChanged || terminal.buffer.active.length === 0;
 
-    if (sessionChanged || lineCountChanged) {
+    if (needsFullRehydrate) {
       terminal.reset();
       session.lines.forEach((line) => terminal.write(line));
       lastSessionRef.current = session.id;
-      lastRenderedLineCountRef.current = session.lines.length;
       fitRef.current?.fit();
       void resizeTerminal(session.id, terminal.cols, terminal.rows);
     }
@@ -101,7 +98,6 @@ export function TerminalView({ session }: TerminalViewProps) {
     const stopOutput = listen<TerminalOutputEvent>("terminal-output", (event) => {
       if (!disposed && session && event.payload.sessionId === session.id) {
         terminal.write(event.payload.data);
-        lastRenderedLineCountRef.current += 1;
       }
     });
 

@@ -30,6 +30,20 @@ pub enum ApprovalMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub enum TerminalControl {
+    CtrlC,
+    CtrlD,
+    ClearLine,
+    Space,
+    ArrowUp,
+    ArrowDown,
+    PageUp,
+    PageDown,
+    Enter,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum PolicyVerdict {
     Allow,
     Deny,

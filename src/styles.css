@@ -348,6 +348,32 @@ button:hover {
   gap: 0.85rem;
 }
 
+.diagnostics-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.diagnostic-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: #121925;
+}
+
+.diagnostic-card.warn {
+  border-color: rgba(255, 204, 102, 0.45);
+}
+
+.diagnostic-card.danger {
+  border-color: rgba(255, 109, 122, 0.45);
+}
+
+.diagnostic-card.info {
+  border-color: rgba(102, 217, 193, 0.35);
+}
+
 .danger {
   border-color: rgba(255, 109, 122, 0.45);
 }
@@ -410,6 +436,16 @@ button:hover {
   font-size: 0.95rem;
 }
 
+.terminal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.terminal-controls button {
+  flex: 0 0 auto;
+}
+
 .panel-status {
   margin: 0.75rem 0 0;
   color: var(--muted);
@@ -443,6 +479,20 @@ button:hover {
 .command-group {
   display: grid;
   gap: 0.6rem;
+}
+
+.custom-library-add {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--panel-border);
+}
+
+.custom-enabled-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
 }
 
 .toggle-row {

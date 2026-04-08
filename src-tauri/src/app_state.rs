@@ -24,7 +24,7 @@ use crate::{
         ActionKind, ActionRequest, AgentCapabilitySetting, AgentMemoryMode, AgentProfile,
         ApprovalGrant, ApprovalMode, CommandSession, DashboardState, DelegationMode, FileRule,
         McpToolRule, PendingApproval, PolicyDecision, PolicyVerdict, SessionPolicy,
-        ProtectionStatus, SupervisorTask, TaskGuardrails, TerminalOutputEvent, Worker,
+        ProtectionStatus, SupervisorTask, TaskGuardrails, TerminalControl, TerminalOutputEvent, Worker,
         WorkerOutputEvent, WorkerStatus,
     },
     policy::evaluate_request,
@@ -111,6 +111,10 @@ impl ProxyTerminalState {
                 "get-childitem".into(),
                 "get-location".into(),
                 "type".into(),
+                "y".into(),
+                "n".into(),
+                "yes".into(),
+                "no".into(),
             ],
             allow_apps: vec!["code".into()],
             allow_domains: vec!["localhost".into()],
@@ -312,6 +316,101 @@ impl ProxyTerminalState {
         Ok(())
     }
 
+    pub fn send_terminal_control(
+        &mut self,
+        app: &AppHandle,
+        session_id: &str,
+        control: TerminalControl,
+    ) -> Result<DashboardState, AppError> {
+        let (bytes, label, message) = match control {
+            TerminalControl::CtrlC => (vec![0x03], "Ctrl+C", "\r\n[proxy] sent Ctrl+C\r\n"),
+            TerminalControl::CtrlD => (vec![0x04], "Ctrl+D", "\r\n[proxy] sent Ctrl+D\r\n"),
+            TerminalControl::ClearLine => (
+                vec![0x15],
+                "Clear line",
+                "\r\n[proxy] sent line-clear control\r\n",
+            ),
+            TerminalControl::Space => (vec![0x20], "Space", "\r\n[proxy] sent Space\r\n"),
+            TerminalControl::ArrowUp => (b"\x1b[A".to_vec(), "Arrow Up", "\r\n[proxy] sent Arrow Up\r\n"),
+            TerminalControl::ArrowDown => (
+                b"\x1b[B".to_vec(),
+                "Arrow Down",
+                "\r\n[proxy] sent Arrow Down\r\n",
+            ),
+            TerminalControl::PageUp => (b"\x1b[5~".to_vec(), "Page Up", "\r\n[proxy] sent Page Up\r\n"),
+            TerminalControl::PageDown => (
+                b"\x1b[6~".to_vec(),
+                "Page Down",
+                "\r\n[proxy] sent Page Down\r\n",
+            ),
+            TerminalControl::Enter => (vec![0x0d], "Enter", "\r\n[proxy] sent Enter\r\n"),
+        };
+
+        self.write_raw_to_terminal(session_id, &bytes)?;
+        emit_terminal_output(app, session_id, message);
+        self.audit.push(audit_event(
+            "command",
+            "human_terminal",
+            Some("control".into()),
+            format!("Sent terminal control `{label}`."),
+            None,
+            None,
+        ));
+
+        Ok(self.snapshot())
+    }
+
+    pub fn restart_terminal_session(
+        &mut self,
+        app: &AppHandle,
+        session_id: &str,
+    ) -> Result<DashboardState, AppError> {
+        let existing = self
+            .sessions
+            .iter()
+            .find(|session| session.id == session_id)
+            .cloned()
+            .ok_or_else(|| AppError::Message("Terminal session was not found.".into()))?;
+
+        if let Some(mut runtime) = self.terminal_runtimes.remove(session_id) {
+            let _ = runtime._child.kill();
+        }
+
+        let (runtime, mut session) = spawn_terminal_runtime(
+            app.clone(),
+            session_id.to_string(),
+            Some(existing.title.clone()),
+            existing.cwd.clone(),
+        )?;
+        runtime
+            .master
+            .resize(PtySize {
+                rows: existing.rows,
+                cols: existing.cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(|error| AppError::Message(format!("Failed to resize restarted PTY: {error}")))?;
+        session.cols = existing.cols;
+        session.rows = existing.rows;
+
+        self.terminal_runtimes.insert(session_id.to_string(), runtime);
+        if let Some(entry) = self.sessions.iter_mut().find(|item| item.id == session_id) {
+            *entry = session;
+        }
+
+        self.audit.push(audit_event(
+            "session",
+            "human_terminal",
+            Some("restarted".into()),
+            format!("Restarted PTY command session `{}`.", existing.title),
+            None,
+            None,
+        ));
+
+        Ok(self.snapshot())
+    }
+
     pub fn approve_request(
         &mut self,
         app: &AppHandle,
@@ -325,7 +424,8 @@ impl ProxyTerminalState {
             .ok_or_else(|| AppError::Message("Approval request was not found.".into()))?;
 
         let pending = self.pending_approvals.remove(index);
-        self.apply_scope_delta(pending.decision.clone());
+        let promoted_to_policy =
+            self.apply_approval_scope_delta_if_persistent(&pending.decision, &mode);
         self.clear_obsolete_approvals_for_request(&pending.request);
         self.clear_obsolete_approvals_for_policy();
         self.grants.push(ApprovalGrant {
@@ -356,8 +456,14 @@ impl ProxyTerminalState {
             approval_source(&pending.request),
             Some("approved".into()),
             format!(
-                "Approved `{}` with mode {:?}.",
-                pending.request.target, mode
+                "Approved `{}` with mode {:?}{}.",
+                pending.request.target,
+                mode,
+                if promoted_to_policy {
+                    " and promoted it into editable policy"
+                } else {
+                    ""
+                }
             ),
             Some(pending.request.id),
             pending.request.worker_id.clone(),
@@ -456,6 +562,19 @@ impl ProxyTerminalState {
     pub fn export_audit_log(&self) -> Result<String, AppError> {
         serde_json::to_string_pretty(&self.audit)
             .map_err(|error| AppError::Message(format!("Failed to serialize audit log: {error}")))
+    }
+
+    fn apply_approval_scope_delta_if_persistent(
+        &mut self,
+        decision: &PolicyDecision,
+        mode: &ApprovalMode,
+    ) -> bool {
+        if matches!(mode, ApprovalMode::Persistent) {
+            self.apply_scope_delta(decision.clone());
+            true
+        } else {
+            false
+        }
     }
 
     pub fn update_policy(&mut self, policy: SessionPolicy) -> DashboardState {
@@ -1081,6 +1200,10 @@ impl ProxyTerminalState {
     }
 
     fn write_to_terminal(&mut self, session_id: &str, input: &str) -> Result<(), AppError> {
+        self.write_raw_to_terminal(session_id, format!("{input}\r").as_bytes())
+    }
+
+    fn write_raw_to_terminal(&mut self, session_id: &str, bytes: &[u8]) -> Result<(), AppError> {
         let runtime = self
             .terminal_runtimes
             .get_mut(session_id)
@@ -1091,7 +1214,7 @@ impl ProxyTerminalState {
             .lock()
             .map_err(|_| AppError::Message("PTY writer lock failed.".into()))?;
         writer
-            .write_all(format!("{input}\r").as_bytes())
+            .write_all(bytes)
             .map_err(|error| AppError::Message(format!("Failed to write to PTY: {error}")))?;
         writer
             .flush()
@@ -1414,7 +1537,17 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
             id: "profile-strict-broker".into(),
             name: "Strict Broker-Only".into(),
             built_in: true,
-            allow_commands: vec!["dir".into(), "pwd".into(), "get-childitem".into(), "get-location".into(), "type".into()],
+            allow_commands: vec![
+                "dir".into(),
+                "pwd".into(),
+                "get-childitem".into(),
+                "get-location".into(),
+                "type".into(),
+                "y".into(),
+                "n".into(),
+                "yes".into(),
+                "no".into(),
+            ],
             allow_domains: vec!["localhost".into()],
             memory_mode: AgentMemoryMode::Ephemeral,
             delegation_mode: DelegationMode::Deny,
@@ -1435,6 +1568,10 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
                 "get-childitem".into(),
                 "get-location".into(),
                 "type".into(),
+                "y".into(),
+                "n".into(),
+                "yes".into(),
+                "no".into(),
                 "git".into(),
                 "npm".into(),
                 "cargo".into(),
@@ -1459,6 +1596,10 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
                 "get-childitem".into(),
                 "get-location".into(),
                 "type".into(),
+                "y".into(),
+                "n".into(),
+                "yes".into(),
+                "no".into(),
                 "curl".into(),
                 "wget".into(),
                 "iwr".into(),
@@ -2094,5 +2235,52 @@ mod tests {
         assert!(envs.iter().any(|(key, value)| key == "ORC_TERMINAL_COMMAND_PREFIX" && value == "PROXY_CMD"));
         assert!(envs.iter().any(|(key, value)| key == "ORC_TERMINAL_POLICY_ROOT" && value == "C:\\workspace"));
         assert!(!envs.iter().any(|(key, _)| key == "SHOULD_BE_REMOVED"));
+    }
+
+    #[test]
+    fn persistent_approval_promotes_scope_delta_but_one_time_does_not() {
+        let mut state = ProxyTerminalState::new();
+        let decision = PolicyDecision {
+            verdict: PolicyVerdict::Prompt,
+            reason: "needs approval".into(),
+            requires_approval: true,
+            scope_delta: Some(ScopeDelta {
+                add_commands: vec!["git status".into()],
+                ..ScopeDelta::default()
+            }),
+        };
+        let promoted =
+            state.apply_approval_scope_delta_if_persistent(&decision, &ApprovalMode::OneTime);
+
+        assert!(!promoted);
+        assert!(
+            !state
+                .policy
+                .allow_commands
+                .iter()
+                .any(|command| command.eq_ignore_ascii_case("git status"))
+        );
+
+        let mut state = ProxyTerminalState::new();
+        let decision = PolicyDecision {
+            verdict: PolicyVerdict::Prompt,
+            reason: "needs approval".into(),
+            requires_approval: true,
+            scope_delta: Some(ScopeDelta {
+                add_commands: vec!["git status".into()],
+                ..ScopeDelta::default()
+            }),
+        };
+        let promoted =
+            state.apply_approval_scope_delta_if_persistent(&decision, &ApprovalMode::Persistent);
+
+        assert!(promoted);
+        assert!(
+            state
+                .policy
+                .allow_commands
+                .iter()
+                .any(|command| command.eq_ignore_ascii_case("git status"))
+        );
     }
 }
