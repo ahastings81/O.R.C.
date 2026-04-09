@@ -146,6 +146,33 @@ pub fn create_worker(
 }
 
 #[tauri::command]
+pub fn update_worker(
+    state: ManagedState<'_>,
+    worker_id: String,
+    name: String,
+    executable_path: Option<String>,
+    args: Option<Vec<String>>,
+    memory_mode: AgentMemoryMode,
+    profile_id: Option<String>,
+) -> Result<DashboardState, String> {
+    with_state(state, |state| {
+        state.update_worker(
+            &worker_id,
+            name,
+            executable_path,
+            args.unwrap_or_default(),
+            memory_mode,
+            profile_id,
+        )
+    })
+}
+
+#[tauri::command]
+pub fn delete_worker(state: ManagedState<'_>, worker_id: String) -> Result<DashboardState, String> {
+    with_state(state, |state| state.delete_worker(&worker_id))
+}
+
+#[tauri::command]
 pub fn save_agent_profile(
     state: ManagedState<'_>,
     name: String,
@@ -190,6 +217,11 @@ pub fn assign_task(
     with_state(state, |state| {
         state.assign_task(&app, &worker_id, title, summary, guardrails)
     })
+}
+
+#[tauri::command]
+pub fn delete_task(state: ManagedState<'_>, task_id: String) -> Result<DashboardState, String> {
+    with_state(state, |state| state.delete_task(&task_id))
 }
 
 #[tauri::command]

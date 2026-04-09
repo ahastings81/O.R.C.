@@ -7,6 +7,8 @@ import {
   bootstrap,
   createCommandSession,
   createWorker,
+  deleteTask,
+  deleteWorker,
   denyRequest,
   denyRequestAndStop,
   exportAudit,
@@ -15,6 +17,7 @@ import {
   sendTerminalControl,
   sendTerminalInput,
   setWorkerStatus,
+  updateWorker,
   updatePolicy
 } from "./api";
 import { COMMAND_LIBRARY, type LibraryItem } from "./commandLibrary";
@@ -157,6 +160,19 @@ export function App() {
       setTaskAllowWrites(profile.defaultGuardrails.allowWrites);
     }
   }, [selectedWorker, state]);
+
+  useEffect(() => {
+    const agent = state?.workers.find((item) => item.id === selectedAgentId);
+    if (!agent) {
+      return;
+    }
+
+    setWorkerName(agent.name);
+    setWorkerPath(agent.executablePath ?? "");
+    setWorkerArgs(agent.args.map(formatWorkerArg).join(" "));
+    setWorkerMemoryMode(agent.memoryMode);
+    setSelectedProfileId(agent.profileId ?? state?.profiles[0]?.id ?? "");
+  }, [selectedAgentId, state]);
 
   useEffect(() => {
     const stopTerminalOutput = listen<TerminalOutputEvent>("terminal-output", (event) => {
@@ -334,30 +350,33 @@ export function App() {
   async function refresh<T>(fn: Promise<T>) {
     const next = (await fn) as DashboardState;
     setState((current) => mergeDashboardState(current, next));
-    if (!activeSessionId && next.sessions[0]) {
-      setActiveSessionId(next.sessions[0].id);
-    }
-    if (!selectedWorker && next.workers[0]) {
-      setSelectedWorker(next.workers[0].id);
-    }
-    if (!selectedAgentId && next.workers[0]) {
-      setSelectedAgentId(next.workers[0].id);
-    }
-    if (!selectedProfileDetailId && next.profiles[0]) {
-      setSelectedProfileDetailId(next.profiles[0].id);
-    }
-    if (!selectedApprovalId && next.pendingApprovals[0]) {
-      setSelectedApprovalId(next.pendingApprovals[0].request.id);
-    }
-    if (!selectedProtectionId && next.protections[0]) {
-      setSelectedProtectionId(next.protections[0].id);
-    }
-    if (!selectedTaskId && next.tasks[0]) {
-      setSelectedTaskId(next.tasks[0].id);
-    }
-    if (!selectedAuditId && next.audit[0]) {
-      setSelectedAuditId(next.audit[0].id);
-    }
+    setActiveSessionId((current) =>
+      next.sessions.some((session) => session.id === current) ? current : (next.sessions[0]?.id ?? null)
+    );
+    setSelectedWorker((current) =>
+      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
+    );
+    setSelectedAgentId((current) =>
+      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
+    );
+    setSelectedProfileDetailId((current) =>
+      next.profiles.some((profile) => profile.id === current) ? current : (next.profiles[0]?.id ?? "")
+    );
+    setSelectedApprovalId((current) =>
+      next.pendingApprovals.some((approval) => approval.request.id === current)
+        ? current
+        : (next.pendingApprovals[0]?.request.id ?? "")
+    );
+    setSelectedProtectionId((current) =>
+      next.protections.some((protection) => protection.id === current) ? current : (next.protections[0]?.id ?? "")
+    );
+    setSelectedTaskId((current) =>
+      next.tasks.some((task) => task.id === current) ? current : (next.tasks[0]?.id ?? "")
+    );
+    setSelectedAuditId((current) =>
+      next.audit.some((event) => event.id === current) ? current : (next.audit[0]?.id ?? "")
+    );
+    return next;
   }
 
   async function submitCommand(event: FormEvent) {
@@ -428,14 +447,60 @@ export function App() {
 
     try {
       setWorkerStatusMessage(`Creating ${adapter} agent...`);
-      await refresh(
+      const next = await refresh(
         createWorker(adapter, workerName, workerPath || undefined, args, workerMemoryMode, selectedProfileId || undefined)
       );
       setWorkerStatusMessage(`Created ${adapter} agent.`);
+      const created = next.workers[next.workers.length - 1];
+      if (created) {
+        setSelectedAgentId(created.id);
+        setSelectedWorker(created.id);
+      }
       setWorkerName(`${adapter === "openclaw" ? "OpenClaw" : "NemoClaw"} agent`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkerStatusMessage(`Agent creation failed: ${message}`);
+    }
+  }
+
+  async function saveWorkerEdits() {
+    if (!selectedAgent) {
+      setWorkerStatusMessage("Select an agent to edit.");
+      return;
+    }
+
+    try {
+      setWorkerStatusMessage(`Saving changes to \`${selectedAgent.name}\`...`);
+      await refresh(
+        updateWorker(
+          selectedAgent.id,
+          workerName,
+          workerPath || undefined,
+          splitWorkerArgs(workerArgs),
+          workerMemoryMode,
+          selectedProfileId || undefined
+        )
+      );
+      setWorkerStatusMessage(`Updated \`${workerName}\`.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkerStatusMessage(`Agent update failed: ${message}`);
+    }
+  }
+
+  async function removeSelectedWorker() {
+    if (!selectedAgent) {
+      setWorkerStatusMessage("Select an agent to delete.");
+      return;
+    }
+
+    try {
+      setWorkerStatusMessage(`Deleting \`${selectedAgent.name}\`...`);
+      await refresh(deleteWorker(selectedAgent.id));
+      setWorkerStatusMessage(`Deleted \`${selectedAgent.name}\`.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkerStatusMessage(`Agent delete failed: ${message}`);
     }
   }
 
@@ -468,6 +533,22 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkerStatusMessage(`Agent update failed: ${message}`);
+    }
+  }
+
+  async function removeSelectedTask() {
+    if (!selectedTask) {
+      setWorkerStatusMessage("Select a task to delete.");
+      return;
+    }
+
+    try {
+      setWorkerStatusMessage(`Deleting task \`${selectedTask.title}\`...`);
+      await refresh(deleteTask(selectedTask.id));
+      setWorkerStatusMessage(`Deleted task \`${selectedTask.title}\`.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkerStatusMessage(`Task delete failed: ${message}`);
     }
   }
 
@@ -1086,6 +1167,12 @@ export function App() {
                 <div className="inline-actions">
                   <button onClick={() => addWorker("openclaw")}>Add OpenClaw</button>
                   <button onClick={() => addWorker("nemoclaw")}>Add NemoClaw</button>
+                  <button onClick={saveWorkerEdits} disabled={!selectedAgent}>
+                    Save Agent
+                  </button>
+                  <button className="danger" onClick={removeSelectedWorker} disabled={!selectedAgent}>
+                    Delete Agent
+                  </button>
                 </div>
               </div>
               <p className="muted">
@@ -1186,7 +1273,7 @@ export function App() {
             </section>
 
             <aside className="panel detail-drawer">
-              {selectedTask ? renderTaskDrawer(selectedTask, workerNameById) : (
+              {selectedTask ? renderTaskDrawer(selectedTask, workerNameById, removeSelectedTask) : (
                 <p className="muted">Select a task to inspect its assignment, guardrails, and status.</p>
               )}
             </aside>
@@ -1368,6 +1455,13 @@ function splitWorkerArgs(value: string): string[] {
     .filter(Boolean);
 }
 
+function formatWorkerArg(value: string): string {
+  if (/\s/.test(value)) {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+  return value;
+}
+
 function renderAgentDrawer(
   worker: Worker,
   profiles: AgentProfile[],
@@ -1459,9 +1553,9 @@ function renderAgentDrawer(
 function renderApprovalDrawer(
   approval: PendingApproval,
   workerNameById: Map<string, string>,
-  approve: (requestId: string, mode: ApprovalMode) => Promise<void>,
-  deny: (requestId: string) => Promise<void>,
-  denyAndStop: (requestId: string) => Promise<void>
+  approve: (requestId: string, mode: ApprovalMode) => Promise<unknown>,
+  deny: (requestId: string) => Promise<unknown>,
+  denyAndStop: (requestId: string) => Promise<unknown>
 ) {
   return (
     <div className="detail-stack">
@@ -1497,7 +1591,11 @@ function renderApprovalDrawer(
   );
 }
 
-function renderTaskDrawer(task: SupervisorTask, workerNameById: Map<string, string>) {
+function renderTaskDrawer(
+  task: SupervisorTask,
+  workerNameById: Map<string, string>,
+  deleteTask: () => Promise<unknown>
+) {
   return (
     <div className="detail-stack">
       <div className="panel-header">
@@ -1514,6 +1612,11 @@ function renderTaskDrawer(task: SupervisorTask, workerNameById: Map<string, stri
         <span className="chip">shell: {task.guardrails.allowShell ? "allowed" : "blocked"}</span>
         <span className="chip">network: {task.guardrails.allowNetwork ? "allowed" : "blocked"}</span>
         <span className="chip">writes: {task.guardrails.allowWrites ? "allowed" : "blocked"}</span>
+      </div>
+      <div className="inline-actions">
+        <button className="danger" onClick={() => void deleteTask()}>
+          Delete Task
+        </button>
       </div>
     </div>
   );

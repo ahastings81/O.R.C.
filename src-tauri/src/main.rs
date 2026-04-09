@@ -28,9 +28,12 @@ fn main() {
             commands::export_audit_log,
             commands::update_policy,
             commands::create_worker,
+            commands::update_worker,
+            commands::delete_worker,
             commands::save_agent_profile,
             commands::apply_agent_profile,
             commands::assign_task,
+            commands::delete_task,
             commands::set_worker_status
         ])
         .run(tauri::generate_context!())

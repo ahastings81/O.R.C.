@@ -658,6 +658,89 @@ impl ProxyTerminalState {
         self.snapshot()
     }
 
+    pub fn update_worker(
+        &mut self,
+        worker_id: &str,
+        name: String,
+        executable_path: Option<String>,
+        args: Vec<String>,
+        memory_mode: AgentMemoryMode,
+        profile_id: Option<String>,
+    ) -> Result<DashboardState, AppError> {
+        let was_running = self.worker_runtimes.contains_key(worker_id);
+        if was_running {
+            self.stop_worker(worker_id)?;
+        }
+
+        let profiles = self.profiles.clone();
+        let worker = self
+            .workers
+            .iter_mut()
+            .find(|worker| worker.id == worker_id)
+            .ok_or_else(|| AppError::Message("Worker was not found.".into()))?;
+
+        worker.name = name.clone();
+        worker.executable_path = executable_path;
+        worker.args = args;
+        worker.memory_mode = memory_mode.clone();
+
+        match profile_id {
+            Some(profile_id) => apply_profile_to_worker(worker, &profile_id, &profiles),
+            None => worker.profile_id = None,
+        }
+
+        worker.name = name.clone();
+        worker.memory_mode = memory_mode;
+        if was_running {
+            worker.status = WorkerStatus::Idle;
+        }
+
+        self.audit.push(audit_event(
+            "worker",
+            "supervisor",
+            Some("updated".into()),
+            format!(
+                "Updated worker `{}`{}.",
+                worker.name,
+                if was_running {
+                    " and stopped the active process so the new config can be relaunched"
+                } else {
+                    ""
+                }
+            ),
+            None,
+            Some(worker.id.clone()),
+        ));
+
+        Ok(self.snapshot())
+    }
+
+    pub fn delete_worker(&mut self, worker_id: &str) -> Result<DashboardState, AppError> {
+        self.stop_worker(worker_id)?;
+
+        let worker_index = self
+            .workers
+            .iter()
+            .position(|worker| worker.id == worker_id)
+            .ok_or_else(|| AppError::Message("Worker was not found.".into()))?;
+
+        let worker = self.workers.remove(worker_index);
+        self.tasks.retain(|task| task.assigned_worker_id.as_deref() != Some(worker_id));
+        self.pending_approvals
+            .retain(|approval| approval.request.worker_id.as_deref() != Some(worker_id));
+
+        self.audit.push(audit_event(
+            "worker",
+            "supervisor",
+            Some("deleted".into()),
+            format!("Deleted worker `{}`.", worker.name),
+            None,
+            Some(worker.id.clone()),
+        ));
+
+        Ok(self.snapshot())
+    }
+
     pub fn save_agent_profile(
         &mut self,
         name: String,
@@ -779,6 +862,37 @@ impl ProxyTerminalState {
             Some(worker.id.clone()),
         ));
         self.tasks.push(task);
+        Ok(self.snapshot())
+    }
+
+    pub fn delete_task(&mut self, task_id: &str) -> Result<DashboardState, AppError> {
+        let task_index = self
+            .tasks
+            .iter()
+            .position(|task| task.id == task_id)
+            .ok_or_else(|| AppError::Message("Task was not found.".into()))?;
+
+        let task = self.tasks.remove(task_index);
+        if let Some(worker_id) = &task.assigned_worker_id {
+            if let Some(worker) = self.workers.iter_mut().find(|worker| worker.id == *worker_id) {
+                if worker.current_task.as_deref() == Some(task_id) {
+                    worker.current_task = None;
+                    if worker.status == WorkerStatus::Running {
+                        worker.status = WorkerStatus::Idle;
+                    }
+                }
+            }
+        }
+
+        self.audit.push(audit_event(
+            "task",
+            "supervisor",
+            Some("deleted".into()),
+            format!("Deleted task `{}`.", task.title),
+            Some(task.id.clone()),
+            task.assigned_worker_id.clone(),
+        ));
+
         Ok(self.snapshot())
     }
 

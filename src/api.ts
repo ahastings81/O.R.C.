@@ -74,6 +74,28 @@ export async function createWorker(
   });
 }
 
+export async function updateWorker(
+  workerId: string,
+  name: string,
+  executablePath: string | undefined,
+  args: string[],
+  memoryMode: AgentMemoryMode,
+  profileId?: string
+): Promise<DashboardState> {
+  return invoke("update_worker", {
+    workerId,
+    name,
+    executablePath,
+    args,
+    memoryMode,
+    profileId
+  });
+}
+
+export async function deleteWorker(workerId: string): Promise<DashboardState> {
+  return invoke("delete_worker", { workerId });
+}
+
 export async function assignTask(
   workerId: string,
   title: string,
@@ -81,6 +103,10 @@ export async function assignTask(
   guardrails: TaskGuardrails
 ): Promise<DashboardState> {
   return invoke("assign_task", { workerId, title, summary, guardrails });
+}
+
+export async function deleteTask(taskId: string): Promise<DashboardState> {
+  return invoke("delete_task", { taskId });
 }
 
 export async function saveAgentProfile(
