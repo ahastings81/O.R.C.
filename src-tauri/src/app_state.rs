@@ -1024,13 +1024,15 @@ impl ProxyTerminalState {
             return Ok(());
         }
 
-        let worker = self
+        let worker_index = self
             .workers
-            .iter_mut()
-            .find(|worker| worker.id == worker_id)
+            .iter()
+            .position(|worker| worker.id == worker_id)
             .ok_or_else(|| AppError::Message("Worker was not found.".into()))?;
 
-        let executable = worker
+        let worker_adapter = self.workers[worker_index].adapter.clone();
+        let worker_runtime_id = self.workers[worker_index].id.clone();
+        let executable = self.workers[worker_index]
             .executable_path
             .clone()
             .ok_or_else(|| AppError::Message("Worker has no executable path configured.".into()))?;
@@ -1047,9 +1049,10 @@ impl ProxyTerminalState {
                 executable
             )));
         }
-        if worker.adapter.eq_ignore_ascii_case("openclaw") {
-            self.harden_openclaw_config(app, Some(&worker.id), "worker launch");
+        if worker_adapter.eq_ignore_ascii_case("openclaw") {
+            self.harden_openclaw_config(app, Some(&worker_runtime_id), "worker launch");
         }
+        let worker = &mut self.workers[worker_index];
         let sandbox_dir = ensure_worker_sandbox_dir(worker)?;
 
         let mut command = Command::new(&executable);
@@ -1081,7 +1084,7 @@ impl ProxyTerminalState {
             .take()
             .ok_or_else(|| AppError::Message("Failed to capture worker stderr.".into()))?;
 
-        if worker.adapter.eq_ignore_ascii_case("openclaw") {
+        if worker_adapter.eq_ignore_ascii_case("openclaw") {
             schedule_openclaw_config_hardening(app.clone(), worker.id.clone());
         }
 
@@ -2051,7 +2054,7 @@ fn enforce_openclaw_secure_auth_setting() -> Result<bool, AppError> {
     };
 
     let gateway_value = root
-        .entry("gateway".into())
+        .entry("gateway")
         .or_insert_with(|| serde_json::json!({}));
     if !gateway_value.is_object() {
         *gateway_value = serde_json::json!({});
@@ -2059,7 +2062,7 @@ fn enforce_openclaw_secure_auth_setting() -> Result<bool, AppError> {
     let gateway = gateway_value.as_object_mut().expect("gateway object");
 
     let control_ui_value = gateway
-        .entry("controlUi".into())
+        .entry("controlUi")
         .or_insert_with(|| serde_json::json!({}));
     if !control_ui_value.is_object() {
         *control_ui_value = serde_json::json!({});
