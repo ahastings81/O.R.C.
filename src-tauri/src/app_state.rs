@@ -110,14 +110,21 @@ impl ProxyTerminalState {
                 "pwd".into(),
                 "get-childitem".into(),
                 "get-location".into(),
+                "get-content".into(),
+                "select-string".into(),
+                "test-path".into(),
                 "type".into(),
+                "node".into(),
+                "npm".into(),
+                "openclaw".into(),
+                "powershell".into(),
                 "y".into(),
                 "n".into(),
                 "yes".into(),
                 "no".into(),
             ],
             allow_apps: vec!["code".into()],
-            allow_domains: vec!["localhost".into()],
+            allow_domains: vec!["localhost".into(), "openclaw.ai".into()],
             mcp: vec![McpToolRule {
                 server: "local://filesystem".into(),
                 tools: vec!["read".into(), "list".into()],
@@ -169,6 +176,8 @@ impl ProxyTerminalState {
     }
 
     pub fn bootstrap(&mut self, app: &AppHandle) -> Result<DashboardState, AppError> {
+        self.harden_openclaw_config(app, None, "app bootstrap");
+
         if self.sessions.is_empty() {
             self.create_command_session(app, Some("Session 1".into()))?;
         }
@@ -969,6 +978,47 @@ impl ProxyTerminalState {
         Ok(self.snapshot())
     }
 
+    fn harden_openclaw_config(
+        &mut self,
+        app: &AppHandle,
+        worker_id: Option<&str>,
+        trigger: &str,
+    ) {
+        match enforce_openclaw_secure_auth_setting() {
+            Ok(true) => {
+                let message = format!(
+                    "[proxy] hardened OpenClaw config after {trigger}: set gateway.controlUi.allowInsecureAuth=false"
+                );
+                if let Some(worker_id) = worker_id {
+                    emit_worker_output(app, worker_id, message.clone());
+                }
+                self.audit.push(audit_event(
+                    "security",
+                    "supervisor",
+                    Some("hardened".into()),
+                    message,
+                    None,
+                    worker_id.map(|id| id.to_string()),
+                ));
+            }
+            Ok(false) => {}
+            Err(error) => {
+                let message = format!("OpenClaw config hardening failed after {trigger}: {error}");
+                if let Some(worker_id) = worker_id {
+                    emit_worker_output(app, worker_id, format!("[proxy] {message}"));
+                }
+                self.audit.push(audit_event(
+                    "security",
+                    "supervisor",
+                    Some("warning".into()),
+                    message,
+                    None,
+                    worker_id.map(|id| id.to_string()),
+                ));
+            }
+        }
+    }
+
     fn start_worker(&mut self, app: &AppHandle, worker_id: &str) -> Result<(), AppError> {
         if self.worker_runtimes.contains_key(worker_id) {
             return Ok(());
@@ -996,6 +1046,9 @@ impl ProxyTerminalState {
                 "Agent executable path `{}` is not a file.",
                 executable
             )));
+        }
+        if worker.adapter.eq_ignore_ascii_case("openclaw") {
+            self.harden_openclaw_config(app, Some(&worker.id), "worker launch");
         }
         let sandbox_dir = ensure_worker_sandbox_dir(worker)?;
 
@@ -1027,6 +1080,10 @@ impl ProxyTerminalState {
             .stderr
             .take()
             .ok_or_else(|| AppError::Message("Failed to capture worker stderr.".into()))?;
+
+        if worker.adapter.eq_ignore_ascii_case("openclaw") {
+            schedule_openclaw_config_hardening(app.clone(), worker.id.clone());
+        }
 
         spawn_worker_reader(app.clone(), worker.id.clone(), stdout, "stdout");
         spawn_worker_reader(app.clone(), worker.id.clone(), stderr, "stderr");
@@ -1285,7 +1342,8 @@ impl ProxyTerminalState {
                 execution.result_path.display()
             ))
         })?;
-        let result: WorkerCommandResultFile = serde_json::from_str(&result_text).map_err(|error| {
+        let result_text = result_text.trim_start_matches('\u{feff}');
+        let result: WorkerCommandResultFile = serde_json::from_str(result_text).map_err(|error| {
             AppError::Message(format!(
                 "Failed to parse worker command result `{}`: {error}",
                 execution.result_path.display()
@@ -1542,13 +1600,20 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
                 "pwd".into(),
                 "get-childitem".into(),
                 "get-location".into(),
+                "get-content".into(),
+                "select-string".into(),
+                "test-path".into(),
                 "type".into(),
+                "node".into(),
+                "npm".into(),
+                "openclaw".into(),
+                "powershell".into(),
                 "y".into(),
                 "n".into(),
                 "yes".into(),
                 "no".into(),
             ],
-            allow_domains: vec!["localhost".into()],
+            allow_domains: vec!["localhost".into(), "openclaw.ai".into()],
             memory_mode: AgentMemoryMode::Ephemeral,
             delegation_mode: DelegationMode::Deny,
             delegation_max_depth: 0,
@@ -1576,7 +1641,7 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
                 "npm".into(),
                 "cargo".into(),
             ],
-            allow_domains: vec!["localhost".into(), "api.openai.com".into()],
+            allow_domains: vec!["localhost".into(), "openclaw.ai".into(), "api.openai.com".into()],
             memory_mode: AgentMemoryMode::TaskScoped,
             delegation_mode: DelegationMode::Prompt,
             delegation_max_depth: 1,
@@ -1605,7 +1670,7 @@ fn default_agent_profiles() -> Vec<AgentProfile> {
                 "iwr".into(),
                 "irm".into(),
             ],
-            allow_domains: vec!["localhost".into()],
+            allow_domains: vec!["localhost".into(), "openclaw.ai".into()],
             memory_mode: AgentMemoryMode::AgentScoped,
             delegation_mode: DelegationMode::Deny,
             delegation_max_depth: 0,
@@ -1946,6 +2011,107 @@ fn emit_worker_output(app: &AppHandle, worker_id: &str, line: String) {
             line,
         },
     );
+}
+
+fn openclaw_config_path() -> Option<PathBuf> {
+    let home = env::var("USERPROFILE")
+        .ok()
+        .or_else(|| env::var("HOME").ok())?;
+    Some(PathBuf::from(home).join(".openclaw").join("openclaw.json"))
+}
+
+fn enforce_openclaw_secure_auth_setting() -> Result<bool, AppError> {
+    let Some(config_path) = openclaw_config_path() else {
+        return Ok(false);
+    };
+
+    if !config_path.exists() {
+        return Ok(false);
+    }
+
+    let config_text = fs::read_to_string(&config_path).map_err(|error| {
+        AppError::Message(format!(
+            "Failed to read OpenClaw config `{}`: {error}",
+            config_path.display()
+        ))
+    })?;
+
+    let mut config_value: serde_json::Value = serde_json::from_str(&config_text).map_err(|error| {
+        AppError::Message(format!(
+            "Failed to parse OpenClaw config `{}`: {error}",
+            config_path.display()
+        ))
+    })?;
+
+    let Some(root) = config_value.as_object_mut() else {
+        return Err(AppError::Message(format!(
+            "OpenClaw config `{}` is not a JSON object.",
+            config_path.display()
+        )));
+    };
+
+    let gateway_value = root
+        .entry("gateway".into())
+        .or_insert_with(|| serde_json::json!({}));
+    if !gateway_value.is_object() {
+        *gateway_value = serde_json::json!({});
+    }
+    let gateway = gateway_value.as_object_mut().expect("gateway object");
+
+    let control_ui_value = gateway
+        .entry("controlUi".into())
+        .or_insert_with(|| serde_json::json!({}));
+    if !control_ui_value.is_object() {
+        *control_ui_value = serde_json::json!({});
+    }
+    let control_ui = control_ui_value
+        .as_object_mut()
+        .expect("controlUi object");
+
+    let current_value = control_ui
+        .get("allowInsecureAuth")
+        .and_then(|value| value.as_bool());
+    if current_value == Some(false) {
+        return Ok(false);
+    }
+
+    control_ui.insert("allowInsecureAuth".into(), serde_json::Value::Bool(false));
+    let updated = serde_json::to_string_pretty(&config_value).map_err(|error| {
+        AppError::Message(format!(
+            "Failed to serialize OpenClaw config `{}`: {error}",
+            config_path.display()
+        ))
+    })?;
+    fs::write(&config_path, format!("{updated}\n")).map_err(|error| {
+        AppError::Message(format!(
+            "Failed to write OpenClaw config `{}`: {error}",
+            config_path.display()
+        ))
+    })?;
+    Ok(true)
+}
+
+fn schedule_openclaw_config_hardening(app: AppHandle, worker_id: String) {
+    thread::spawn(move || {
+        for delay in [1_u64, 5, 15] {
+            thread::sleep(Duration::from_secs(delay));
+            match enforce_openclaw_secure_auth_setting() {
+                Ok(true) => emit_worker_output(
+                    &app,
+                    &worker_id,
+                    format!(
+                        "[proxy] hardened OpenClaw config after startup check: set gateway.controlUi.allowInsecureAuth=false ({delay}s)"
+                    ),
+                ),
+                Ok(false) => {}
+                Err(error) => emit_worker_output(
+                    &app,
+                    &worker_id,
+                    format!("[proxy] OpenClaw config hardening check failed: {error}"),
+                ),
+            }
+        }
+    });
 }
 
 fn parse_worker_envelope(line: &str) -> Option<ParsedWorkerEnvelope> {

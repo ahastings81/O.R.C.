@@ -25,7 +25,17 @@ export const COMMAND_LIBRARY: CommandGroup[] = [
     id: "workspace-read",
     label: "Workspace Read",
     description: "Inspect files and current location without changing the workspace.",
-    items: [command("cd"), command("dir"), command("pwd"), command("get-childitem"), command("get-location"), command("type")]
+    items: [
+      command("cd"),
+      command("dir"),
+      command("pwd"),
+      command("get-childitem"),
+      command("get-location"),
+      command("get-content"),
+      command("select-string"),
+      command("test-path"),
+      command("type")
+    ]
   },
   {
     id: "interactive-replies",
@@ -56,7 +66,8 @@ export const COMMAND_LIBRARY: CommandGroup[] = [
       command("irm"),
       command("ping"),
       command("nslookup"),
-      domain("localhost")
+      domain("localhost"),
+      domain("openclaw.ai")
     ]
   },
   {
@@ -70,5 +81,11 @@ export const COMMAND_LIBRARY: CommandGroup[] = [
     label: "O.R.C. Tools",
     description: "Commands commonly used for O.R.C. and claw workflows.",
     items: [command("openclaw"), command("nemoclaw"), command("orc"), command("orc-cli")]
+  },
+  {
+    id: "onboarding-windows",
+    label: "Windows Onboarding",
+    description: "Low-level commands commonly needed for OpenClaw and Windows onboarding flows.",
+    items: [command("node"), command("npm"), command("openclaw"), command("powershell"), command("get-content"), command("select-string"), command("test-path")]
   }
 ];

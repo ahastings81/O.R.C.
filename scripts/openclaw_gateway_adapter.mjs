@@ -146,8 +146,8 @@ function buildSignedDevice(deviceIdentity, nonce, signedAt, tokenForSignature) {
   const payload = [
     "v2",
     deviceIdentity.id,
-    "orc-terminal-adapter",
-    "adapter",
+    "cli",
+    "probe",
     "operator",
     "operator.read,operator.write",
     String(signedAt),
@@ -241,10 +241,10 @@ async function connectGateway() {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: "orc-terminal-adapter",
+          id: "cli",
           version: "0.1.0",
           platform: process.platform,
-          mode: "operator"
+          mode: "probe"
         },
         role: "operator",
         scopes: ["operator.read", "operator.write"],

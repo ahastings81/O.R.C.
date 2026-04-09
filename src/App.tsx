@@ -209,13 +209,20 @@ export function App() {
           return current;
         }
 
+        const line = event.payload.line;
+        const compatibilityConfirmed =
+          line.includes("[proxy] allowed worker command") ||
+          line.includes("adapter-status: received broker result") ||
+          line.includes("completed with status ok");
+
         return {
           ...current,
           workers: current.workers.map((worker) =>
             worker.id === event.payload.workerId
               ? {
                   ...worker,
-                  outputLines: [...worker.outputLines, event.payload.line].slice(-120)
+                  compatibility: compatibilityConfirmed ? "broker_compatible" : worker.compatibility,
+                  outputLines: [...worker.outputLines, line].slice(-120)
                 }
               : worker
           )
@@ -1684,12 +1691,24 @@ function diagnoseWorker(
     });
   }
 
-  if (
+  const hasHealthyBrokerSignals =
+    outputText.includes("[proxy] allowed worker command") ||
+    outputText.includes("adapter-status: received broker result") ||
+    outputText.includes("completed with status ok");
+
+  const hasGatewayAuthProblem =
     outputText.includes("econnrefused") ||
-    outputText.includes("gateway") ||
-    outputText.includes("token") ||
-    outputText.includes("auth")
-  ) {
+    outputText.includes("invalid connect params") ||
+    outputText.includes("device signature invalid") ||
+    outputText.includes("missing scope:") ||
+    outputText.includes("openclaw connect failed") ||
+    outputText.includes("gateway websocket closed") ||
+    outputText.includes("gateway websocket error") ||
+    outputText.includes("timed out waiting for gateway frame") ||
+    outputText.includes("gateway token missing") ||
+    outputText.includes("adapter-error:");
+
+  if (!hasHealthyBrokerSignals && hasGatewayAuthProblem) {
     diagnostics.push({
       id: "gateway-auth",
       severity: "warn",
