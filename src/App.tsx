@@ -22,6 +22,7 @@ import {
 } from "./api";
 import { COMMAND_LIBRARY, type LibraryItem } from "./commandLibrary";
 import { TerminalView } from "./TerminalView";
+import orcLogo from "../branding/orc-logo.png";
 import type {
   AgentProfile,
   AgentMemoryMode,
@@ -658,9 +659,12 @@ export function App() {
       <aside className="sidebar sidebar-nav">
         <section className="panel app-brand-panel">
           <div className="panel-header">
-            <div>
+            <div className="brand-block">
+              <img className="brand-logo" src={orcLogo} alt="O.R.C. Terminal logo" />
+              <div>
               <h2>O.R.C. Terminal</h2>
               <p className="muted">Govern powerful agents without giving up the final say on execution, privacy, and risk.</p>
+              </div>
             </div>
             <button onClick={() => refresh(createCommandSession(`Session ${dashboard.sessions.length + 1}`))}>
               New Session

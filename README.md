@@ -1,5 +1,11 @@
 # O.R.C. Terminal
 
+<p align="center">
+  <img src="./branding/orc-logo.png" alt="O.R.C. Terminal logo" width="360" />
+</p>
+
+<p align="center"><strong>The terminal built for AI.</strong></p>
+
 O.R.C. Terminal is a Windows-first desktop app for supervising terminal access and brokered AI agent execution through a local policy layer.
 
 It combines:

@@ -822,10 +822,10 @@ impl ProxyTerminalState {
         let task = agent::assign_task(worker, title, summary, guardrails.clone());
         if let Some(runtime) = self.worker_runtimes.get(&worker.id) {
             let envelope = format!(
-                "TASK {}\nTITLE: {}\nSUMMARY: {}\nALLOW_SHELL: {}\nALLOW_NETWORK: {}\nALLOW_WRITES: {}\n\n",
+                "TASK {}\nTITLE_B64: {}\nSUMMARY_B64: {}\nALLOW_SHELL: {}\nALLOW_NETWORK: {}\nALLOW_WRITES: {}\n\n",
                 task.id,
-                task.title,
-                task.summary,
+                BASE64.encode(task.title.as_bytes()),
+                BASE64.encode(task.summary.as_bytes()),
                 task.guardrails.allow_shell,
                 task.guardrails.allow_network,
                 task.guardrails.allow_writes

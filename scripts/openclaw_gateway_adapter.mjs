@@ -80,6 +80,14 @@ function decodeBase64(value) {
   return Buffer.from(value, "base64").toString("utf8");
 }
 
+function decodeBase64Loose(value) {
+  try {
+    return decodeBase64(value);
+  } catch {
+    return "";
+  }
+}
+
 function ensureParentDir(path) {
   mkdirSync(dirname(path), { recursive: true });
 }
@@ -170,9 +178,23 @@ function buildSignedDevice(deviceIdentity, nonce, signedAt, tokenForSignature) {
 function waitForOpen(websocket) {
   return new Promise((resolve, reject) => {
     websocket.addEventListener("open", () => resolve(), { once: true });
-    websocket.addEventListener("error", (event) => reject(event.error || new Error("websocket open failed")), {
-      once: true
-    });
+    websocket.addEventListener(
+      "error",
+      (event) => reject(new Error(`websocket open failed: ${describeError(event.error || event)}`)),
+      {
+        once: true
+      }
+    );
+    websocket.addEventListener(
+      "close",
+      (event) =>
+        reject(
+          new Error(
+            `websocket closed before open: code=${event.code ?? "unknown"} reason=${event.reason || "(none)"}`
+          )
+        ),
+      { once: true }
+    );
   });
 }
 
@@ -199,14 +221,16 @@ function nextFrame(websocket, timeoutMs = 30000) {
       }
     };
 
-    const onClose = () => {
+    const onClose = (event) => {
       cleanup();
-      reject(new Error("gateway websocket closed"));
+      reject(
+        new Error(`gateway websocket closed code=${event.code ?? "unknown"} reason=${event.reason || "(none)"}`)
+      );
     };
 
     const onError = (event) => {
       cleanup();
-      reject(event.error || new Error("gateway websocket error"));
+      reject(new Error(`gateway websocket error: ${describeError(event.error || event)}`));
     };
 
     websocket.addEventListener("message", onMessage);
@@ -219,12 +243,15 @@ async function connectGateway() {
   const state = loadAdapterState();
   const gatewayToken = resolveGatewayToken();
   const websocket = new WebSocket(gatewayUrl);
+  console.log("adapter-status: opening gateway websocket");
   await waitForOpen(websocket);
+  console.log("adapter-status: gateway websocket open");
 
   const challenge = await nextFrame(websocket, 10000);
   if (challenge?.type !== "event" || challenge?.event !== "connect.challenge") {
     throw new Error("expected connect.challenge from OpenClaw Gateway");
   }
+  console.log("adapter-status: received connect.challenge");
 
   const nonce = challenge.payload?.nonce;
   const signedAt = challenge.payload?.ts;
@@ -258,11 +285,13 @@ async function connectGateway() {
       }
     })
   );
+  console.log("adapter-status: sent connect request");
 
   const response = await nextFrame(websocket, 10000);
   if (response?.type !== "res" || response?.id !== connectId || response?.ok !== true) {
     throw new Error(response?.error?.message || "OpenClaw connect failed");
   }
+  console.log("adapter-status: gateway connect accepted");
 
   const newDeviceToken = response.payload?.auth?.deviceToken;
   if (newDeviceToken && newDeviceToken !== state.deviceToken) {
@@ -358,7 +387,22 @@ function commandResultToMessage(result) {
 }
 
 function safeString(value) {
-  return typeof value === "string" ? value : JSON.stringify(value);
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function describeError(error) {
+  if (error instanceof Error) {
+    return error.stack || error.message || error.name || String(error);
+  }
+  const serialized = safeString(error);
+  return serialized || "(empty error)";
 }
 
 function createAssistantLineWriter() {
@@ -521,7 +565,15 @@ async function runAgentTurn(websocket, sessionKey, message, task, isFirstTurn) {
 }
 
 function parseTaskEnvelope(lines) {
-  const task = { type: "task", id: "", title: "", summary: "" };
+  const task = {
+    type: "task",
+    id: "",
+    title: "",
+    summary: "",
+    allowShell: undefined,
+    allowNetwork: undefined,
+    allowWrites: undefined
+  };
 
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
@@ -533,8 +585,28 @@ function parseTaskEnvelope(lines) {
       task.title = line.slice(6).trim();
       continue;
     }
+    if (line.startsWith("TITLE_B64:")) {
+      task.title = decodeBase64Loose(line.slice(10).trim());
+      continue;
+    }
     if (line.startsWith("SUMMARY:")) {
       task.summary = line.slice(8).trim();
+      continue;
+    }
+    if (line.startsWith("SUMMARY_B64:")) {
+      task.summary = decodeBase64Loose(line.slice(12).trim());
+      continue;
+    }
+    if (line.startsWith("ALLOW_SHELL:")) {
+      task.allowShell = line.slice(12).trim().toLowerCase() === "true";
+      continue;
+    }
+    if (line.startsWith("ALLOW_NETWORK:")) {
+      task.allowNetwork = line.slice(14).trim().toLowerCase() === "true";
+      continue;
+    }
+    if (line.startsWith("ALLOW_WRITES:")) {
+      task.allowWrites = line.slice(13).trim().toLowerCase() === "true";
       continue;
     }
   }
@@ -709,7 +781,7 @@ async function drainQueue() {
     try {
       await runAgentTask(task);
     } catch (error) {
-      console.error(`adapter-error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`adapter-error: ${describeError(error)}`);
     }
   }
 
