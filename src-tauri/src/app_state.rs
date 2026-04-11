@@ -1614,6 +1614,31 @@ impl ProxyTerminalState {
             }
         }
     }
+
+    fn handle_worker_status_line(
+        &mut self,
+        worker_id: &str,
+        line_value: &str,
+    ) {
+        let normalized = line_value.to_ascii_lowercase();
+
+        if normalized.contains("adapter-status: run ") && normalized.contains(" completed with status ok")
+        {
+            if let Some(worker) = self.workers.iter_mut().find(|worker| worker.id == worker_id) {
+                worker.status = WorkerStatus::Idle;
+            }
+            self.sync_worker_task_state(worker_id, &WorkerStatus::Completed);
+            let _ = self.cleanup_worker_memory_if_needed(worker_id, "task");
+            self.audit.push(audit_event(
+                "task",
+                "agent_runtime",
+                Some("completed".into()),
+                format!("Worker `{}` completed its current task.", worker_id),
+                None,
+                Some(worker_id.to_string()),
+            ));
+        }
+    }
 }
 
 fn default_policy_root() -> String {
@@ -2351,6 +2376,11 @@ where
                         }
                     }
 
+                    let state = app.state::<Mutex<ProxyTerminalState>>();
+                    if let Ok(mut state) = state.lock() {
+                        state.handle_worker_status_line(&worker_id, line_value);
+                    }
+
                     emit_worker_output(&app, &worker_id, format!("[{label}] {line_value}"));
                 }
                 Err(_) => break,
@@ -2565,5 +2595,43 @@ mod tests {
                 .iter()
                 .any(|command| command.eq_ignore_ascii_case("git status"))
         );
+    }
+
+    #[test]
+    fn completed_openclaw_run_marks_task_completed_and_worker_idle() {
+        let mut state = ProxyTerminalState::new();
+        let worker_id = state.workers[0].id.clone();
+        let task = agent::assign_task(
+            state
+                .workers
+                .iter_mut()
+                .find(|worker| worker.id == worker_id)
+                .expect("worker"),
+            "Inspect workspace".into(),
+            "Run git status and report the result.".into(),
+            TaskGuardrails {
+                allow_shell: true,
+                allow_network: false,
+                allow_writes: false,
+            },
+        );
+        state.tasks.push(task.clone());
+
+        state.handle_worker_status_line(&worker_id, "adapter-status: run 123 completed with status ok");
+
+        let worker = state
+            .workers
+            .iter()
+            .find(|worker| worker.id == worker_id)
+            .expect("worker after completion");
+        assert_eq!(worker.status, WorkerStatus::Idle);
+        assert!(worker.current_task.is_none());
+
+        let task = state
+            .tasks
+            .iter()
+            .find(|item| item.id == task.id)
+            .expect("task after completion");
+        assert_eq!(task.status, WorkerStatus::Completed);
     }
 }

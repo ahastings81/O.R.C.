@@ -13,6 +13,10 @@ export async function bootstrap(): Promise<DashboardState> {
   return invoke("bootstrap_state");
 }
 
+export async function getDashboardState(): Promise<DashboardState> {
+  return invoke("get_dashboard_state");
+}
+
 export async function createCommandSession(title?: string): Promise<DashboardState> {
   return invoke("create_command_session", { title });
 }

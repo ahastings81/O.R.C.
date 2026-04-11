@@ -12,6 +12,7 @@ import {
   denyRequest,
   denyRequestAndStop,
   exportAudit,
+  getDashboardState,
   restartTerminalSession,
   saveAgentProfile,
   sendTerminalControl,
@@ -105,6 +106,38 @@ export function App() {
   const [selectedWorker, setSelectedWorker] = useState<string>("");
   const [exportedAudit, setExportedAudit] = useState<string>("");
 
+  async function syncDashboardState() {
+    const next = await getDashboardState();
+    setState((current) => mergeDashboardState(current, next));
+    setActiveSessionId((current) =>
+      next.sessions.some((session) => session.id === current) ? current : (next.sessions[0]?.id ?? null)
+    );
+    setSelectedWorker((current) =>
+      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
+    );
+    setSelectedAgentId((current) =>
+      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
+    );
+    setSelectedProfileDetailId((current) =>
+      next.profiles.some((profile) => profile.id === current) ? current : (next.profiles[0]?.id ?? "")
+    );
+    setSelectedApprovalId((current) =>
+      next.pendingApprovals.some((approval) => approval.request.id === current)
+        ? current
+        : (next.pendingApprovals[0]?.request.id ?? "")
+    );
+    setSelectedProtectionId((current) =>
+      next.protections.some((protection) => protection.id === current) ? current : (next.protections[0]?.id ?? "")
+    );
+    setSelectedTaskId((current) =>
+      next.tasks.some((task) => task.id === current) ? current : (next.tasks[0]?.id ?? "")
+    );
+    setSelectedAuditId((current) =>
+      next.audit.some((event) => event.id === current) ? current : (next.audit[0]?.id ?? "")
+    );
+    return next;
+  }
+
   useEffect(() => {
     bootstrap().then((next) => {
       setState((current) => mergeDashboardState(current, next));
@@ -176,6 +209,18 @@ export function App() {
   }, [selectedAgentId, state]);
 
   useEffect(() => {
+    let syncScheduled = false;
+    const scheduleDashboardSync = () => {
+      if (syncScheduled) {
+        return;
+      }
+      syncScheduled = true;
+      window.setTimeout(() => {
+        syncScheduled = false;
+        void syncDashboardState();
+      }, 0);
+    };
+
     const stopTerminalOutput = listen<TerminalOutputEvent>("terminal-output", (event) => {
       setState((current) => {
         if (!current) {
@@ -194,6 +239,10 @@ export function App() {
           )
         };
       });
+
+      if (event.payload.data.includes("[proxy] worker input blocked pending approval")) {
+        scheduleDashboardSync();
+      }
     });
 
     const stopTerminalExit = listen<TerminalExitEvent>("terminal-exit", (event) => {
@@ -245,6 +294,15 @@ export function App() {
           )
         };
       });
+
+      if (
+        event.payload.line.includes("blocked pending approval") ||
+        event.payload.line.includes("approval granted") ||
+        event.payload.line.includes("approval denied") ||
+        event.payload.line.includes("completed with status ok")
+      ) {
+        scheduleDashboardSync();
+      }
     });
 
     return () => {
@@ -349,35 +407,8 @@ export function App() {
   ).length;
 
   async function refresh<T>(fn: Promise<T>) {
-    const next = (await fn) as DashboardState;
-    setState((current) => mergeDashboardState(current, next));
-    setActiveSessionId((current) =>
-      next.sessions.some((session) => session.id === current) ? current : (next.sessions[0]?.id ?? null)
-    );
-    setSelectedWorker((current) =>
-      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
-    );
-    setSelectedAgentId((current) =>
-      next.workers.some((worker) => worker.id === current) ? current : (next.workers[0]?.id ?? "")
-    );
-    setSelectedProfileDetailId((current) =>
-      next.profiles.some((profile) => profile.id === current) ? current : (next.profiles[0]?.id ?? "")
-    );
-    setSelectedApprovalId((current) =>
-      next.pendingApprovals.some((approval) => approval.request.id === current)
-        ? current
-        : (next.pendingApprovals[0]?.request.id ?? "")
-    );
-    setSelectedProtectionId((current) =>
-      next.protections.some((protection) => protection.id === current) ? current : (next.protections[0]?.id ?? "")
-    );
-    setSelectedTaskId((current) =>
-      next.tasks.some((task) => task.id === current) ? current : (next.tasks[0]?.id ?? "")
-    );
-    setSelectedAuditId((current) =>
-      next.audit.some((event) => event.id === current) ? current : (next.audit[0]?.id ?? "")
-    );
-    return next;
+    await fn;
+    return syncDashboardState();
   }
 
   async function submitCommand(event: FormEvent) {

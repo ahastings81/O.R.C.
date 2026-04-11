@@ -25,6 +25,11 @@ pub fn bootstrap_state(app: AppHandle, state: ManagedState<'_>) -> Result<Dashbo
 }
 
 #[tauri::command]
+pub fn get_dashboard_state(state: ManagedState<'_>) -> Result<DashboardState, String> {
+    with_state(state, |state| Ok(state.snapshot()))
+}
+
+#[tauri::command]
 pub fn create_command_session(
     app: AppHandle,
     state: ManagedState<'_>,

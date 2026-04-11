@@ -17,6 +17,7 @@ fn main() {
         .manage(Mutex::new(ProxyTerminalState::new()))
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap_state,
+            commands::get_dashboard_state,
             commands::create_command_session,
             commands::send_terminal_input,
             commands::resize_terminal,

@@ -176,3 +176,84 @@ fn evaluate_mcp(policy: &SessionPolicy, request: &ActionRequest) -> PolicyDecisi
         scope_delta: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::evaluate_request;
+    use crate::models::{
+        AccessLevel, ActionKind, ActionRequest, AgentMemoryMode, DelegationMode, FileRule,
+        McpToolRule, PolicyVerdict, SessionPolicy,
+    };
+
+    fn strict_broker_policy() -> SessionPolicy {
+        SessionPolicy {
+            name: "Strict Broker-Only".into(),
+            roots: vec!["C:\\workspace".into()],
+            file_rules: vec![FileRule {
+                root: "C:\\workspace".into(),
+                access: AccessLevel::Manage,
+            }],
+            allow_commands: vec![
+                "dir".into(),
+                "pwd".into(),
+                "get-childitem".into(),
+                "get-location".into(),
+                "get-content".into(),
+                "select-string".into(),
+                "test-path".into(),
+                "type".into(),
+                "node".into(),
+                "npm".into(),
+                "openclaw".into(),
+                "powershell".into(),
+                "y".into(),
+                "n".into(),
+                "yes".into(),
+                "no".into(),
+            ],
+            allow_apps: vec!["code".into()],
+            allow_domains: vec!["localhost".into(), "openclaw.ai".into()],
+            mcp: vec![McpToolRule {
+                server: "local://filesystem".into(),
+                tools: vec!["read".into(), "list".into()],
+            }],
+            elevated_commands: vec!["type".into()],
+            audit_redactions: vec!["OPENAI_API_KEY".into()],
+            default_memory_mode: AgentMemoryMode::Ephemeral,
+            delegation_mode: DelegationMode::Deny,
+            delegation_max_depth: 0,
+        }
+    }
+
+    #[test]
+    fn git_status_requires_explicit_approval_outside_strict_broker_allowlist() {
+        let policy = strict_broker_policy();
+        let request = ActionRequest {
+            id: "req-git-status".into(),
+            kind: ActionKind::Command,
+            target: "git status".into(),
+            command: Some("git status".into()),
+            cwd: Some("C:\\workspace".into()),
+            args: None,
+            rationale: Some("worker smoke test".into()),
+            worker_id: Some("worker-1".into()),
+            session_id: None,
+        };
+
+        let decision = evaluate_request(&policy, &request, &[]);
+
+        assert_eq!(decision.verdict, PolicyVerdict::Prompt);
+        assert!(decision.requires_approval);
+        assert_eq!(
+            decision.reason,
+            "`git` is outside the allowlist and needs explicit approval."
+        );
+        assert_eq!(
+            decision
+                .scope_delta
+                .expect("scope delta")
+                .add_commands,
+            vec!["git".to_string()]
+        );
+    }
+}
