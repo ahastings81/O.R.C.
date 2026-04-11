@@ -658,17 +658,8 @@ export function App() {
     <div className="app-shell app-shell-nav">
       <aside className="sidebar sidebar-nav">
         <section className="panel app-brand-panel">
-          <div className="panel-header">
-            <div className="brand-block">
-              <img className="brand-logo" src={orcLogo} alt="O.R.C. Terminal logo" />
-              <div>
-              <h2>O.R.C. Terminal</h2>
-              <p className="muted">Govern powerful agents without giving up the final say on execution, privacy, and risk.</p>
-              </div>
-            </div>
-            <button onClick={() => refresh(createCommandSession(`Session ${dashboard.sessions.length + 1}`))}>
-              New Session
-            </button>
+          <div className="brand-block">
+            <img className="brand-lockup" src={orcLogo} alt="O.R.C. Terminal logo" />
           </div>
         </section>
 
@@ -1083,6 +1074,12 @@ export function App() {
                   {session.title}
                 </button>
               ))}
+              <button
+                className="tab new-session-tab"
+                onClick={() => refresh(createCommandSession(`Session ${dashboard.sessions.length + 1}`))}
+              >
+                New Session
+              </button>
             </div>
           </div>
 

@@ -205,18 +205,23 @@ button:hover {
 }
 
 .brand-block {
-  display: flex;
+  display: grid;
   align-items: center;
-  gap: 1rem;
   min-width: 0;
 }
 
-.brand-logo {
-  width: 92px;
-  height: 92px;
+.app-brand-panel {
+  padding: 0.85rem;
+}
+
+.brand-lockup {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
   object-fit: contain;
-  flex: 0 0 auto;
-  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.35));
+  display: block;
+  border-radius: 14px;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.3));
 }
 
 .muted {
@@ -279,6 +284,10 @@ button:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.new-session-tab {
+  white-space: nowrap;
 }
 
 .chip,
